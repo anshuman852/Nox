@@ -347,12 +347,12 @@ fn try_parse_oppo(buf: &[u8]) -> Option<BatteryInfo> {
         }
         let mut info = BatteryInfo::default();
         for pair in payload[2..2 + count * 2].chunks_exact(2) {
-            let level = pair[1] & 0x7F;
+            let raw_level = level(pair[1] & 0x7F);
             let charging = (pair[1] & 0x80) != 0;
             match pair[0] {
-                1 => { info.left = Some(level); info.left_charging = charging; }
-                2 => { info.right = Some(level); info.right_charging = charging; }
-                3 => { info.case = Some(level); info.case_charging = charging; }
+                1 => { info.left = raw_level; info.left_charging = raw_level.is_some() && charging; }
+                2 => { info.right = raw_level; info.right_charging = raw_level.is_some() && charging; }
+                3 => { info.case = raw_level; info.case_charging = raw_level.is_some() && charging; }
                 _ => {}
             }
         }
@@ -951,6 +951,21 @@ mod tests {
         assert!(!battery.right_charging);
         assert_eq!(battery.case, Some(100));
         assert!(battery.case_charging);
+    }
+
+    #[test]
+    fn parses_oppo_melody_battery_list_with_unavailable_component() {
+        // 0xFF marks a component as unavailable; masking with 0x7F alone would
+        // wrongly read this as 127% (and "charging", since bit 7 is set).
+        let response = [
+            0xAA, 0x0D, 0x00, 0x00, 0x06, 0x81, 0xF0, 0x06, 0x00,
+            0x00, 0x02, 0x01, 0xFF, 0x03, 0x50,
+        ];
+        let battery = try_parse_oppo(&response).expect("valid OPPO Melody battery response");
+        assert_eq!(battery.left, None);
+        assert!(!battery.left_charging);
+        assert_eq!(battery.case, Some(80));
+        assert!(!battery.case_charging);
     }
 }
 
